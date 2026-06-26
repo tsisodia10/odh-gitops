@@ -1,0 +1,12 @@
+apiVersion: v2
+name: postgresql
+description: PostgreSQL database for MaaS API on vanilla Kubernetes
+type: application
+version: 1.0.0
+appVersion: "16"
+keywords:
+  - postgresql
+  - database
+  - maas
+maintainers:
+  - name: Red Hat

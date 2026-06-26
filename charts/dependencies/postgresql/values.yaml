@@ -1,0 +1,15 @@
+# PostgreSQL namespace (should match rhaiOperator.applicationsNamespace)
+namespace: redhat-ods-applications
+
+# Database configuration
+database: maas
+username: maas
+# Password for PostgreSQL. If empty, a random password is generated.
+# Set explicitly for deterministic deployments and snapshot tests.
+password: ""
+
+# PostgreSQL image
+image: postgres:16-alpine
+
+# Pull secret name (must match the rhai-pull-secret pattern)
+imagePullSecrets: []

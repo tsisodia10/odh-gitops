@@ -5,11 +5,13 @@
 {{- $createCoreweaveKE := and .Values.coreweave.enabled .Values.coreweave.kubernetesEngine.enabled }}
 {{- $createAwsKE := and .Values.aws.enabled .Values.aws.kubernetesEngine.enabled }}
 {{- $createGateway := and .Values.components.kserve.enabled .Values.components.kserve.gateway.create }}
-{{- $gatewayTls := and $createGateway .Values.gateway.tls.enabled }}
+{{- $createMaas := .Values.components.maas.enabled }}
+{{- $createMaasGateway := and $createMaas .Values.components.maas.gateway.create }}
+{{- $gatewayTls := and (or $createGateway $createMaasGateway) .Values.gateway.tls.enabled }}
 {{- $appNs := .Values.rhaiOperator.applicationsNamespace }}
 {{- $issuerName := .Values.gateway.tls.issuerRef.name }}
 {{- $issuerKind := .Values.gateway.tls.issuerRef.kind }}
-{{- if or $createKserve $createAzureKE $createCoreweaveKE $createAwsKE $createGateway }}
+{{- if or $createKserve $createMaas $createAzureKE $createCoreweaveKE $createAwsKE $createGateway $createMaasGateway }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -37,6 +39,7 @@ rules:
       - components.platform.opendatahub.io
     resources:
       - kserves
+      - modelsasservices
     verbs:
       - get
       - create
@@ -90,9 +93,24 @@ rules:
       - create
       - patch
       - update
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - create
+      - patch
+  - apiGroups:
+      - cert-manager.io
+    resources:
+      - certificates
+    verbs:
+      - get
+      - create
+      - patch
+      - update
   {{- if and $gatewayTls (eq $issuerKind "ClusterIssuer") }}
-  # ClusterIssuers are cluster-scoped, so the read must live on the ClusterRole,
-  # but it is restricted to the single issuer the gateway Certificate references.
   - apiGroups:
       - cert-manager.io
     resources:
@@ -101,6 +119,31 @@ rules:
       - {{ $issuerName }}
     verbs:
       - get
+  {{- end }}
+  {{- if $createMaasGateway }}
+  - apiGroups:
+      - operator.authorino.kuadrant.io
+    resources:
+      - authorinos
+    verbs:
+      - get
+      - patch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - get
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/exec
+    verbs:
+      - get
+      - list
+      - create
   {{- end }}
   {{- end }}
 ---
