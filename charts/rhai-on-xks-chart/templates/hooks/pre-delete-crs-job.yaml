@@ -1,0 +1,60 @@
+{{- if .Values.enabled }}
+{{- if .Values.hooks.postInstallCrs.enabled }}
+{{- $componentCRs := include "rhai-on-xks-chart.enabledComponentCRs" . | fromJson }}
+{{- $providerKECR := include "rhai-on-xks-chart.enabledProviderKECR" . }}
+{{- $depNamespaces := (include "rhai-on-xks-chart.kubernetesEngineDependencyNamespaces" (dict "root" . "managedOnly" true) | fromJson).items }}
+{{- if or $componentCRs $providerKECR }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rhai-pre-delete-crs
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rhai-on-xks-chart.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-delete
+    helm.sh/hook-weight: "1"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "rhai-on-xks-chart.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: rhai-pre-delete-hook
+      {{- include "rhai-on-xks-chart.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: delete-crs
+          image: {{ required "hooks.cliImage is required" .Values.hooks.cliImage | quote }}
+          resources:
+            {{- toYaml .Values.hooks.resources | nindent 12 }}
+          securityContext:
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              {{- include "rhai-on-xks-chart.crDeleteCommands" . | trimPrefix "\n" | nindent 14 }}
+
+              {{- if $.Values.uninstall.cleanupNamespaces }}
+              {{- range $ns := $depNamespaces }}
+              echo "Deleting namespace '{{ $ns }}'..."
+              kubectl delete namespace '{{ $ns }}' --ignore-not-found --timeout=60s
+              {{- end }}
+              {{- end }}
+              echo "Done."
+{{- end }}
+{{- end }}
+{{- end }}

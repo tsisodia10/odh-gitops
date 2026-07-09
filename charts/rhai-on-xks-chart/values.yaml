@@ -1,0 +1,233 @@
+# Enable/disable all resource creation
+enabled: true
+
+# Install CRDs or not using the chart
+installCRDs: true
+
+# Common labels applied to all resources
+labels: {}
+
+# Behavior on helm uninstall
+uninstall:
+  # Delete dependency namespaces (e.g. istio-system) created by pre-install hooks.
+  # Disabled by default: these namespaces may contain user workloads.
+  cleanupNamespaces: false
+
+# RHAI Operator configuration
+rhaiOperator:
+  # Operator namespace
+  namespace: redhat-ods-operator
+  applicationsNamespace: redhat-ods-applications
+  # Manager container image
+  image: quay.io/opendatahub/opendatahub-operator:latest # image is updated during Helm chart build by konflux
+  # Image pull policy
+  imagePullPolicy: Always
+  # Number of operator replicas
+  replicas: 1
+  # Resources for the main manager container
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 300m
+      memory: 256Mi
+  # Resources for the copy-manifests init container
+  initResources:
+    limits:
+      cpu: 100m
+      memory: 512Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  # Related images env vars (RELATED_IMAGE_*)
+  relatedImages: []
+  # Example:
+  # relatedImages:
+  #   - name: RELATED_IMAGE_ODH_KSERVE_CONTROLLER_IMAGE
+  #     value: quay.io/opendatahub/kserve-controller:latest
+
+hooks:
+  cliImage: registry.redhat.io/openshift4/ose-cli-rhel9:v4.20@sha256:d876c1d98b39d65c00c4261431bb84b90284699f3aef84d8701a25c786fb79a1
+  # Default resources for all hook job containers
+  resources:
+    limits:
+      cpu: 200m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  postInstallCrs:
+    enabled: true
+
+# Cluster wise config for gateway for tls, shared config for all components section below
+gateway:
+  # External hostname e.g. "*.mycompany.com", if empty, only cluster-internal DNS (svc.cluster.local) to use
+  hostname: ""
+  tls:
+    # When false, gateways are HTTP only
+    enabled: true
+    # Default is set to use rhai managed internal CA, handled by operator
+    # to bring your own ClusterIssuer/Issuer (e.g. Let's Encrypt), ensure it is Ready in the cluster before config it below
+    issuerRef:
+      name: rhai-ca-issuer
+      kind: ClusterIssuer
+    # Extra dnsNames added to the certificate (multi-domain / wildcard).
+    additionalSANs: []
+
+# Components configuration
+components:
+  kserve:
+    # Create Kserve CR via post-install hook
+    enabled: true
+    spec: {}
+    # Gateway configuration for KServe inference
+    gateway:
+      # Create Gateway and ConfigMaps via post-install hook
+      create: true
+      allowedRoutes:
+        namespaces:
+          # Which namespaces can attach HTTPRoutes to the Gateway (All, Same, or Selector).
+          # Defaults to Same (secure by default): only the Gateway's own namespace can attach routes.
+          from: Same
+          # Example for All (any namespace can attach routes):
+          # from: All
+          #
+          # Example for Selector (only namespaces matching labels):
+          # from: Selector
+          # selector:
+          #   matchLabels:
+          #     inference-gateway-access: "true"
+
+# Azure cloud configuration
+azure:
+  enabled: false
+  cloudManager:
+    # Cloud Manager operator namespace
+    namespace: rhai-cloudmanager-system
+    # Cloud Manager container image
+    image: quay.io/opendatahub/opendatahub-operator:latest
+    # Image pull policy
+    imagePullPolicy: Always
+    # Number of cloud manager replicas
+    replicas: 1
+    # Resources for the cloud manager container
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+  kubernetesEngine:
+    # Create AzureKubernetesEngine CR via post-install hook
+    enabled: true
+    spec:
+      dependencies:
+        certManager:
+          managementPolicy: Managed
+          configuration: {}
+        gatewayAPI:
+          managementPolicy: Managed
+          configuration: {}
+        lws:
+          managementPolicy: Unmanaged   # Required only when need run WideEP, set to Managed then
+          configuration:
+            namespace: openshift-lws-operator
+        sailOperator:
+          managementPolicy: Managed
+          configuration:
+            namespace: istio-system
+
+# CoreWeave cloud configuration
+coreweave:
+  enabled: false
+  cloudManager:
+    # Cloud Manager operator namespace
+    namespace: rhai-cloudmanager-system
+    # Cloud Manager container image
+    image: quay.io/opendatahub/opendatahub-operator:latest
+    # Image pull policy
+    imagePullPolicy: Always
+    # Number of cloud manager replicas
+    replicas: 1
+    # Resources for the cloud manager container
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+  kubernetesEngine:
+    # Create CoreWeaveKubernetesEngine CR via post-install hook
+    enabled: true
+    spec:
+      dependencies:
+        certManager:
+          managementPolicy: Managed
+          configuration: {}
+        gatewayAPI:
+          managementPolicy: Managed
+          configuration: {}
+        lws:
+          managementPolicy: Unmanaged  # Required only when need run WideEP, set to Managed then
+          configuration:
+            namespace: openshift-lws-operator
+        sailOperator:
+          managementPolicy: Managed
+          configuration:
+            namespace: istio-system
+
+# AWS cloud configuration
+aws:
+  enabled: false
+  cloudManager:
+    # Cloud Manager operator namespace
+    namespace: rhai-cloudmanager-system
+    # Cloud Manager container image
+    image: quay.io/opendatahub/opendatahub-operator:latest
+    # Image pull policy
+    imagePullPolicy: Always
+    # Number of cloud manager replicas
+    replicas: 1
+    # Resources for the cloud manager container
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 100m
+        memory: 512Mi
+  kubernetesEngine:
+    # Create AWSKubernetesEngine CR via post-install hook
+    enabled: true
+    spec:
+      dependencies:
+        certManager:
+          managementPolicy: Managed
+          configuration: {}
+        gatewayAPI:
+          managementPolicy: Managed
+          configuration: {}
+        lws:
+          managementPolicy: Unmanaged
+          configuration:
+            namespace: openshift-lws-operator
+        sailOperator:
+          managementPolicy: Managed
+          configuration:
+            namespace: istio-system
+
+# Pull secret for private registries
+# Use --set-file imagePullSecret.dockerConfigJson=path/to/auth.json
+imagePullSecret:
+  # Name of the pull secret to create in target namespaces. This name MUST not be changed
+  # as it is referred also in other installed dependencies and not yet configurable.
+  name: rhai-pull-secret
+  # Docker config JSON content (populated via --set-file)
+  dockerConfigJson: ""
+  # Namespaces created by dependency operators where pull secrets should be injected
+  dependencyNamespaces:
+    - cert-manager-operator
+    - cert-manager

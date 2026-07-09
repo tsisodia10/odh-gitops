@@ -8,7 +8,7 @@
 #   make chart-test CHART_NAME=<name>       # Test specific chart
 
 charts:
-  odh-rhoai:
+  rhai-on-openshift-chart:
     # Optional: additional values file for testing (relative to chart path)
     testValuesFile: test/testValues.yaml
     snapshots:
@@ -26,12 +26,10 @@ charts:
           - operator.type=rhoai
 
       - name: all-components-managed
+        valuesFiles:
+          - docs/examples/values-all-components-managed.yaml
         setFlags:
           - skipCrdCheck=true
-          - components.mlflowoperator.dsc.managementState=Managed
-          - components.llamastackoperator.dsc.managementState=Managed
-          - components.trainingoperator.dsc.managementState=Managed
-          - components.kserve.dsc.modelsAsService.managementState=Managed
 
       - name: install-with-helm-dependencies
         setFlags:
@@ -39,17 +37,31 @@ charts:
           - tags.install-with-helm-dependencies=true
 
       - name: inference-only
-        valuesFiles:
-          - docs/examples/values-inference-only.yaml
         setFlags:
           - skipCrdCheck=true
+          - operator.type=rhoai
+          - profile=rhaii
+
+      - name: profile-with-customization
+        setFlags:
+          - skipCrdCheck=true
+          - operator.type=rhoai
+          - profile=rhaii
+          - components.kserve.dependencies.jobSet=true
 
       - name: enable-llm-d-wva
         setFlags:
           - skipCrdCheck=true
+          - components.kserve.dsc.managementState=Managed
           - components.kserve.dsc.wva.managementState=Managed
           - components.kserve.dependencies.customMetricsAutoscaler=true
 
+      - name: with-rhcl-config
+        setFlags:
+          - skipCrdCheck=true
+          - components.kserve.dsc.managementState=Managed
+          - dependencies.rhcl.olm.config.env[0].name=RELATED_IMAGE_WASMSHIM
+          - dependencies.rhcl.olm.config.env[0].value=image-value
 
   dependencies/cert-manager-operator:
     snapshots:
@@ -67,30 +79,112 @@ charts:
     snapshots:
       - name: default
 
-  rhaii-helm-chart:
+  dependencies/rhcl-operator:
     snapshots:
-      - name: azure-with-related-images
-        setFlags:
-          - azure.enabled=true
-          - rhaiOperator.relatedImages.RELATED_IMAGE_ODH_KSERVE_CONTROLLER_IMAGE=quay.io/opendatahub/kserve-controller:latest
+      - name: default
 
+  rhai-on-xks-chart:
+    snapshots:
       - name: with-custom-namespace
         setFlags:
           - azure.enabled=true
+          - imagePullSecret.dockerConfigJson=testauth
           - rhaiOperator.namespace=rhai-operator
           - rhaiOperator.applicationsNamespace=rhai-applications
+          - azure.kubernetesEngine.spec.dependencies.lws.configuration.namespace=custom-lws
+          - azure.kubernetesEngine.spec.dependencies.lws.managementPolicy=Managed
+          - azure.kubernetesEngine.spec.dependencies.sailOperator.configuration.namespace=custom-istio
 
-      - name: coreweave
+      - name: azure-with-cleanup-namespaces
         setFlags:
-          - coreweave.enabled=true
+          - azure.enabled=true
+          - uninstall.cleanupNamespaces=true
+
+      - name: azure-with-all-deps-managed
+        setFlags:
+          - azure.enabled=true
+          - imagePullSecret.dockerConfigJson=testauth
+          - azure.kubernetesEngine.spec.dependencies.lws.managementPolicy=Managed
+
+      - name: azure-with-related-images
+        setFlags:
+          - azure.enabled=true
+          - rhaiOperator.relatedImages[0].name=RELATED_IMAGE_ODH_KSERVE_LLMISVC_CONTROLLER_IMAGE
+          - rhaiOperator.relatedImages[0].value=ghcr.io/opendatahub-io/kserve/odh-kserve-llmisvc-controller:release-v0.17
 
       - name: azure-with-pull-secret
         setFlags:
           - azure.enabled=true
           - imagePullSecret.dockerConfigJson=testauth
 
+      - name: azure-with-gateway-hostname
+        setFlags:
+          - azure.enabled=true
+          - gateway.hostname=*.redhat.com
+
+      - name: azure-with-tls-disabled
+        setFlags:
+          - azure.enabled=true
+          - gateway.tls.enabled=false
+
+      - name: azure-with-byo-issuer
+        setFlags:
+          - azure.enabled=true
+          - gateway.hostname=*.example.com
+          - gateway.tls.issuerRef.name=my-letsencrypt-issuer
+          - gateway.tls.additionalSANs[0]=api.example.com
+          - gateway.tls.additionalSANs[1]=a.grpc.example.com
+          - gateway.tls.additionalSANs[2]=admin.example.org
+
+      - name: azure-with-namespaced-issuer
+        setFlags:
+          - azure.enabled=true
+          - gateway.hostname=*.example.com
+          - gateway.tls.issuerRef.kind=Issuer
+          - gateway.tls.issuerRef.name=my-namespaced-issuer
+
+      - name: coreweave
+        setFlags:
+          - coreweave.enabled=true
+
       - name: coreweave-with-pull-secret
         setFlags:
           - coreweave.enabled=true
           - imagePullSecret.dockerConfigJson=testauth
 
+      - name: coreweave-with-all-deps-managed
+        setFlags:
+          - coreweave.enabled=true
+          - imagePullSecret.dockerConfigJson=testauth
+          - coreweave.kubernetesEngine.spec.dependencies.lws.managementPolicy=Managed
+
+      - name: coreweave-with-allowed-routes-selector
+        setFlags:
+          - coreweave.enabled=true
+          - components.kserve.gateway.allowedRoutes.namespaces.from=Selector
+          - components.kserve.gateway.allowedRoutes.namespaces.selector.matchLabels.inference-gateway-access=enabled
+
+      - name: aws
+        setFlags:
+          - aws.enabled=true
+
+      - name: aws-with-pull-secret
+        setFlags:
+          - aws.enabled=true
+          - imagePullSecret.dockerConfigJson=testauth
+
+      - name: aws-with-all-deps-managed
+        setFlags:
+          - aws.enabled=true
+          - imagePullSecret.dockerConfigJson=testauth
+          - aws.kubernetesEngine.spec.dependencies.lws.managementPolicy=Managed
+
+      - name: aws-with-allowed-routes-all
+        setFlags:
+          - aws.enabled=true
+          - components.kserve.gateway.allowedRoutes.namespaces.from=All
+
+      - name: aws-with-allowed-routes-same
+        setFlags:
+          - aws.enabled=true
+          - components.kserve.gateway.allowedRoutes.namespaces.from=Same

@@ -63,8 +63,8 @@ The repository is designed to be applied in **layers**, providing flexibility in
 | **Tempo Operator** | Distributed tracing backend | `openshift-tempo-operator` | Tracing infrastructure | |
 | **Red Hat Connectivity Link** | Multicloud application connectivity and API management | `kuadrant-system` | Model Serving (KServe) | Leader Worker Set, Cert-Manager |
 | **MariaDB Operator** | MariaDB for OpenShift | `mariadb-operator` | TrustyAI (optional, only if using database mode) | |
-| **Node Feature Discovery** | Detects hardware features and capabilities of nodes | `openshift-nfd` | LlamaStack Operator | |
-| **NVIDIA GPU Operator** | Enables GPU-accelerated workloads on NVIDIA hardware | `nvidia-gpu-operator` | Model Serving, LlamaStack Operator | Node Feature Discovery |
+| **Node Feature Discovery** | Detects hardware features and capabilities of nodes | `openshift-nfd` | OGX | |
+| **NVIDIA GPU Operator** | Enables GPU-accelerated workloads on NVIDIA hardware | `nvidia-gpu-operator` | Model Serving, OGX | Node Feature Discovery |
 
 #### Operator Configuration Requirements
 
@@ -141,7 +141,7 @@ To add a new dependency, follow the [Contributing](CONTRIBUTING.md#add-a-new-dep
 
 ### Prerequisites
 
-- OpenShift cluster (version 4.19 or later)
+- OpenShift cluster (version 4.19.9 or later)
 - `kubectl` or `oc` CLI installed
 - Cluster admin permissions
 - Kustomize v5 or later (optional - `kubectl` has built-in Kustomize support)

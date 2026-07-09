@@ -3,14 +3,29 @@
 ## Table of Contents
 
 - [Inference Only Stack](#inference-only-stack)
-    - [Overview](#overview)
-    - [Prerequisites](#prerequisites)
-    - [What Gets Installed](#what-gets-installed)
-    - [Values Override](#values-override)
-    - [Scripted Installation (Helm)](#scripted-installation-helm)
-    - [Enabling Authorino TLS](#enabling-authorino-tls)
-    - [Verification](#verification)
-    - [Troubleshooting](#troubleshooting)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+  - [Prerequisites](#prerequisites)
+  - [What Gets Installed](#what-gets-installed)
+  - [Values Override](#values-override)
+  - [Scripted Installation (Helm)](#scripted-installation-helm)
+    - [1. Clone the repository](#1-clone-the-repository)
+    - [2. Install operators (first Helm run)](#2-install-operators-first-helm-run)
+    - [3. Wait for CRDs](#3-wait-for-crds)
+    - [4. Create CRs (second Helm run)](#4-create-crs-second-helm-run)
+    - [5. Enable Authorino TLS (post-install)](#5-enable-authorino-tls-post-install)
+    - [6. Verify the installation](#6-verify-the-installation)
+  - [Enabling Authorino TLS](#enabling-authorino-tls)
+    - [CLI method](#cli-method)
+  - [Verification](#verification)
+    - [Check operator CSVs](#check-operator-csvs)
+    - [Check Authorino TLS](#check-authorino-tls)
+    - [Check DataScienceCluster status](#check-datasciencecluster-status)
+    - [Comprehensive verification](#comprehensive-verification)
+  - [Troubleshooting](#troubleshooting)
+    - [CRs not being created](#crs-not-being-created)
+    - [Authorino TLS issues](#authorino-tls-issues)
+    - [Dependencies not being installed](#dependencies-not-being-installed)
 
 ## Overview
 
@@ -28,119 +43,43 @@ The stack installs a minimal set of dependency operators required by KServe:
 
 ## Prerequisites
 
-- OpenShift cluster (version 4.19 or later)
+- OpenShift cluster (version 4.19.9 or later)
 - `kubectl` or `oc` CLI installed
 - Cluster admin permissions
 - Helm v4
 
 ## What Gets Installed
 
-The values override configures the chart to install:
+Since all components and monitoring default to `Removed`, the values override only needs to enable KServe:
 
-1. **Dependency operators** (via OLM): cert-manager, Leader Worker Set, RHCL (Kuadrant)
-2. **ODH/RHOAI operator** (via OLM)
-3. **DSCInitialization** (DSCI) with monitoring disabled
+1. **ODH/RHOAI operator** (via OLM)
+2. **Dependency operators** (via OLM): cert-manager, Leader Worker Set, RHCL (Kuadrant) are auto-enabled by KServe
+3. **DSCInitialization** (DSCI) with monitoring disabled (default)
 4. **DataScienceCluster** (DSC) with only KServe set to `Managed`
-
-All other components (AI Pipelines, Dashboard, Feast, Kueue, Model Registry, Ray, Trainer, Training Operator, TrustyAI,
-Workbenches, MLflow, LlamaStack) are set to `Removed`.
 
 ## Values Override
 
-The values override file is located at
-[`docs/examples/values-inference-only.yaml`](examples/values-inference-only.yaml).
+The simplest way to deploy the inference-only stack is using the built-in `rhaii` profile:
 
-> [!NOTE]
-> The YAML below is a copy of the values file for reference. If you modify the values, ensure you also update the source
-> file at `docs/examples/values-inference-only.yaml`.
-
-Below is the full content with field-by-field explanations:
-
-```yaml
-# -- Operator configuration
-operator:
-  enabled: true
-  type: rhoai  # Change to "odh" for Open Data Hub
-
-# -- Disable monitoring (not needed for inference-only)
-services:
-  monitoring:
-    dependencies:
-      clusterObservability: false
-      opentelemetry: false
-      tempo: false
-    dsci:
-      managementState: Removed
-
-components:
-  kserve:
-    dependencies:
-      certManager: true
-      leaderWorkerSet: true
-      rhcl: true
-      customMetricsAutoscaler: false  # Disabled for now
-      jobSet: false  # Not needed for inference-only
-    dsc:
-      managementState: Managed
-      modelsAsService:
-        managementState: Removed
-      nim:
-        managementState: Removed
-
-  # -- Disable all non-inference components
-  aipipelines:
-    dsc:
-      managementState: Removed
-
-  dashboard:
-    dsc:
-      managementState: Removed
-
-  feastoperator:
-    dsc:
-      managementState: Removed
-
-  kueue:
-    dsc:
-      managementState: Removed
-
-  modelregistry:
-    dsc:
-      managementState: Removed
-
-  ray:
-    dsc:
-      managementState: Removed
-
-  trainer:
-    dsc:
-      managementState: Removed
-
-  trainingoperator:
-    dsc:
-      managementState: Removed
-
-  trustyai:
-    dsc:
-      managementState: Removed
-
-  workbenches:
-    dsc:
-      managementState: Removed
-
-  mlflowoperator:
-    dsc:
-      managementState: Removed
-
-  llamastackoperator:
-    dsc:
-      managementState: Removed
+```bash
+helm upgrade --install rhaii ./charts/rhai-on-openshift-chart \
+  --set profile=rhaii \
+  --set operator.type=rhoai \
+  -n rhai-gitops --create-namespace
 ```
+
+The `rhaii` profile automatically enables KServe with its required dependencies and disables unnecessary ones
+(like jobSet). See the [Deploy Profiles](../charts/rhai-on-openshift-chart/README.md#deploy-profiles) section in the chart README for
+more details.
+
+Alternatively, you can use the values override file at
+[`docs/examples/values-inference-only.yaml`](examples/values-inference-only.yaml) for full control over the
+configuration.
 
 > [!NOTE]
 > The chart's tri-state dependency resolution (`auto`/`true`/`false`) handles transitive dependencies automatically. For
-> example, RHCL auto-pulls cert-manager and Leader Worker Set as its own dependencies. Setting components to `Removed`
-> prevents their dependencies from being installed.
+> example, RHCL auto-pulls cert-manager and Leader Worker Set as its own dependencies. Components set to `Removed`
+> (the default) do not trigger dependency installation.
 
 ## Scripted Installation (Helm)
 
@@ -157,9 +96,16 @@ The first run installs the OLM subscriptions (Namespace, OperatorGroup, Subscrip
 CRDs do not exist yet.
 
 ```bash
-helm upgrade --install rhoai ./charts/odh-rhoai \
+# Using profile (recommended)
+helm upgrade --install rhaii ./charts/rhai-on-openshift-chart \
+  --set profile=rhaii \
+  --set operator.type=rhoai \
+  -n rhai-gitops --create-namespace
+
+# Or using values file for full control
+helm upgrade --install rhaii ./charts/rhai-on-openshift-chart \
   -f docs/examples/values-inference-only.yaml \
-  -n opendatahub-gitops --create-namespace
+  -n rhai-gitops --create-namespace
 ```
 
 ### 3. Wait for CRDs
@@ -189,9 +135,16 @@ Now that CRDs exist, the second run creates the CR resources (DSCInitialization,
 LeaderWorkerSetOperator, etc.):
 
 ```bash
-helm upgrade --install rhoai ./charts/odh-rhoai \
+# Using profile
+helm upgrade --install rhaii ./charts/rhai-on-openshift-chart \
+  --set profile=rhaii \
+  --set operator.type=rhoai \
+  -n rhai-gitops
+
+# Or using values file
+helm upgrade --install rhaii ./charts/rhai-on-openshift-chart \
   -f docs/examples/values-inference-only.yaml \
-  -n opendatahub-gitops
+  -n rhai-gitops
 ```
 
 ### 5. Enable Authorino TLS (post-install)
@@ -278,9 +231,9 @@ install:
 2. Run `helm upgrade` again. CRs are skipped until their CRDs exist:
 
    ```bash
-   helm upgrade --install rhoai ./charts/odh-rhoai \
-     -f docs/examples/values-inference-only.yaml \
-     -n opendatahub-gitops
+   helm upgrade --install rhaii ./charts/rhai-on-openshift-chart \
+     --set profile=rhaii --set operator.type=rhoai \
+     -n rhai-gitops
    ```
 
 ### Authorino TLS issues

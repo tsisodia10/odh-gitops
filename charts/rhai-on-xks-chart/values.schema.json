@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "$defs": {
+    "dependency": {
+      "type": "object",
+      "description": "Dependency configuration",
+      "properties": {
+        "configuration": {
+          "type": "object",
+          "description": "Configuration for the dependency"
+        },
+        "managementPolicy": {
+          "type": "string",
+          "description": "Whether the operator manages this dependency (Managed or Unmanaged)",
+          "enum": ["Managed", "Unmanaged"],
+          "default": "Managed"
+        }
+      }
+    },
+    "resourceRequirements": {
+      "type": "object",
+      "description": "Kubernetes resource requirements (requests and limits)",
+      "properties": {
+        "limits": {
+          "type": "object",
+          "description": "Resource limits",
+          "properties": {
+            "cpu": { "type": "string", "description": "CPU limit (e.g. 500m, 1000m)" },
+            "memory": { "type": "string", "description": "Memory limit (e.g. 256Mi, 4Gi)" }
+          },
+          "additionalProperties": false
+        },
+        "requests": {
+          "type": "object",
+          "description": "Resource requests",
+          "properties": {
+            "cpu": { "type": "string", "description": "CPU request (e.g. 100m, 500m)" },
+            "memory": { "type": "string", "description": "Memory request (e.g. 64Mi, 256Mi)" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "replicas": {
+      "type": "integer",
+      "description": "Number of pod replicas",
+      "minimum": 1
+    },
+    "cloudManager": {
+      "type": "object",
+      "description": "Cloud Manager operator configuration",
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "description": "Cloud Manager operator namespace",
+          "default": "rhai-cloudmanager-system"
+        },
+        "image": {
+          "type": "string",
+          "description": "Cloud Manager container image"
+        },
+        "imagePullPolicy": {
+          "type": "string",
+          "description": "Image pull policy for the Cloud Manager container",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        },
+        "replicas": {
+          "$ref": "#/$defs/replicas",
+          "description": "Number of cloud manager replicas",
+          "default": 1
+        },
+        "resources": {
+          "$ref": "#/$defs/resourceRequirements",
+          "description": "Resources for the cloud manager container"
+        }
+      }
+    },
+    "kubernetesEngine": {
+      "type": "object",
+      "description": "KubernetesEngine CR configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Create KubernetesEngine CR via post-install hook",
+          "default": true
+        },
+        "spec": {
+          "type": "object",
+          "description": "KubernetesEngine CR spec",
+          "properties": {
+            "dependencies": {
+              "type": "object",
+              "description": "Dependency configurations",
+              "properties": {
+                "certManager": {
+                  "$ref": "#/$defs/dependency"
+                },
+                "gatewayAPI": {
+                  "$ref": "#/$defs/dependency"
+                },
+                "lws": {
+                  "$ref": "#/$defs/dependency"
+                },
+                "sailOperator": {
+                  "$ref": "#/$defs/dependency"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Enable/disable all resource creation",
+      "default": true
+    },
+    "installCRDs": {
+      "type": "boolean",
+      "description": "Install CRDs or not using the chart",
+      "default": true
+    },
+    "labels": {
+      "type": "object",
+      "description": "Common labels applied to all resources",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Helm hooks configuration",
+      "properties": {
+        "cliImage": {
+          "type": "string",
+          "description": "CLI container image used by all post-install hook jobs"
+        },
+        "resources": {
+          "$ref": "#/$defs/resourceRequirements",
+          "description": "Default resources for all hook job containers"
+        },
+        "postInstallCrs": {
+          "type": "object",
+          "description": "Post-install hook for creating CRs",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable post-install CR creation hook",
+              "default": true
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["cliImage"]
+    },
+    "gateway": {
+      "type": "object",
+      "description": "Shared inference-gateway TLS identity, used by every component gateway",
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "description": "External hostname for the shared TLS certificate (e.g. *.mycompany.com). If empty, only cluster-internal DNS is covered.",
+          "default": "",
+          "pattern": "^$|^(\\*\\.)?([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,}$"
+        },
+        "tls": {
+          "type": "object",
+          "description": "TLS configuration for the shared inference-gateway certificate",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "When false, gateways are HTTP only: no Certificate is created and HTTPS listeners omit TLS.",
+              "default": true
+            },
+            "issuerRef": {
+              "type": "object",
+              "description": "cert-manager issuer for the certificate. The chart does not create this issuer.",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Issuer name. Defaults to the operator-managed internal CA (matches RHAI_ISSUER_REF_NAME).",
+                  "default": "rhai-ca-issuer"
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "Issuer kind: ClusterIssuer (cluster-wide) or Issuer (namespace-scoped).",
+                  "enum": ["ClusterIssuer", "Issuer"],
+                  "default": "ClusterIssuer"
+                }
+              }
+            },
+            "additionalSANs": {
+              "type": "array",
+              "description": "Extra dnsNames added to the certificate (multi-domain / wildcard).",
+              "items": {
+                "type": "string",
+                "pattern": "^(\\*\\.)?([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "components": {
+      "type": "object",
+      "description": "Components configuration",
+      "properties": {
+        "kserve": {
+          "type": "object",
+          "description": "Kserve component configuration",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Create Kserve CR via post-install hook",
+              "default": true
+            },
+            "spec": {
+              "type": "object",
+              "description": "Kserve CR spec"
+            },
+            "gateway": {
+              "type": "object",
+              "description": "Gateway configuration for KServe inference",
+              "properties": {
+                "create": {
+                  "type": "boolean",
+                  "description": "Create Gateway and ConfigMaps via post-install hook",
+                  "default": true
+                },
+                "allowedRoutes": {
+                  "type": "object",
+                  "description": "Gateway allowedRoutes configuration for controlling which namespaces can attach HTTPRoutes",
+                  "properties": {
+                    "namespaces": {
+                      "type": "object",
+                      "description": "Namespace-based route attachment policy",
+                      "properties": {
+                        "from": {
+                          "type": "string",
+                          "description": "Which namespaces can attach HTTPRoutes to the Gateway (All, Same, or Selector). If empty, defaults to Same — only from the Gateway's own namespace.",
+                          "enum": ["", "Selector", "Same", "All"]
+                        },
+                        "selector": {
+                          "type": "object",
+                          "description": "Label selector for namespaces when from is Selector",
+                          "properties": {
+                            "matchLabels": {
+                              "type": "object",
+                              "description": "Label key-value pairs that namespaces must match",
+                              "additionalProperties": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rhaiOperator": {
+      "type": "object",
+      "description": "RHAI Operator configuration",
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "description": "Operator namespace",
+          "default": "redhat-ods-operator"
+        },
+        "applicationsNamespace": {
+          "type": "string",
+          "description": "Applications namespace",
+          "default": "redhat-ods-applications"
+        },
+        "image": {
+          "type": "string",
+          "description": "Manager container image"
+        },
+        "imagePullPolicy": {
+          "type": "string",
+          "description": "Image pull policy for the manager container",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        },
+        "replicas": {
+          "$ref": "#/$defs/replicas",
+          "description": "Number of operator replicas",
+          "default": 3
+        },
+        "resources": {
+          "$ref": "#/$defs/resourceRequirements",
+          "description": "Resources for the main manager container"
+        },
+        "initResources": {
+          "$ref": "#/$defs/resourceRequirements",
+          "description": "Resources for the copy-manifests init container"
+        },
+        "relatedImages": {
+          "type": "array",
+          "description": "Related images env vars (RELATED_IMAGE_*) for disconnected environments",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": ["name", "value"]
+          }
+        }
+      }
+    },
+    "azure": {
+      "type": "object",
+      "description": "Azure cloud configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable Azure cloud manager resources",
+          "default": false
+        },
+        "cloudManager": {
+          "$ref": "#/$defs/cloudManager",
+          "description": "Azure Cloud Manager configuration"
+        },
+        "kubernetesEngine": {
+          "$ref": "#/$defs/kubernetesEngine",
+          "description": "AzureKubernetesEngine CR configuration"
+        }
+      }
+    },
+    "coreweave": {
+      "type": "object",
+      "description": "CoreWeave cloud configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable CoreWeave cloud manager resources",
+          "default": false
+        },
+        "cloudManager": {
+          "$ref": "#/$defs/cloudManager",
+          "description": "CoreWeave Cloud Manager configuration"
+        },
+        "kubernetesEngine": {
+          "$ref": "#/$defs/kubernetesEngine",
+          "description": "CoreWeaveKubernetesEngine CR configuration"
+        }
+      }
+    },
+    "aws": {
+      "type": "object",
+      "description": "Amazon cloud configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable AWS cloud manager resources",
+          "default": false
+        },
+        "cloudManager": {
+          "$ref": "#/$defs/cloudManager",
+          "description": "AWS Cloud Manager configuration"
+        },
+        "kubernetesEngine": {
+          "$ref": "#/$defs/kubernetesEngine",
+          "description": "AWSKubernetesEngine CR configuration"
+        }
+      }
+    },
+    "imagePullSecret": {
+      "type": "object",
+      "description": "Pull secret configuration for private registries. Use --set-file imagePullSecret.dockerConfigJson=path/to/auth.json",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the pull secret to create in target namespaces",
+          "default": "rhai-pull-secret",
+          "const": "rhai-pull-secret"
+        },
+        "dockerConfigJson": {
+          "type": "string",
+          "description": "Docker config JSON content (populated via --set-file)"
+        },
+        "dependencyNamespaces": {
+          "type": "array",
+          "description": "Namespaces created by dependency operators where pull secrets should be injected",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

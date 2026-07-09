@@ -1,0 +1,52 @@
+{{- if .Values.enabled }}
+{{- if .Values.hooks.postInstallCrs.enabled }}
+{{- $componentCRs := include "rhai-on-xks-chart.enabledComponentCRs" . | fromJson }}
+{{- $providerKECR := include "rhai-on-xks-chart.enabledProviderKECR" . }}
+{{- if or $componentCRs $providerKECR }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rhai-post-install-crs
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rhai-on-xks-chart.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "1"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "rhai-on-xks-chart.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: rhai-post-install-hook
+      {{- include "rhai-on-xks-chart.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: create-crs
+          image: {{ required "hooks.cliImage is required" .Values.hooks.cliImage | quote }}
+          resources:
+            {{- toYaml .Values.hooks.resources | nindent 12 }}
+          securityContext:
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              {{- include "rhai-on-xks-chart.crApplyCommands" . | trimPrefix "\n" | nindent 14 }}
+              echo "Done."
+{{- end }}
+{{- end }}
+{{- end }}

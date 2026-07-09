@@ -5,6 +5,16 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+##@ Version Management
+
+.PHONY: print-rhoai-version
+print-rhoai-version: ## Print current RHOAI_VERSION from Makefile
+	@echo $(RHOAI_VERSION)
+
+.PHONY: update-rhoai-version
+update-rhoai-version: yq ## Update RHOAI_VERSION from ODH-Build-Config
+	@./scripts/update-rhoai-version.sh
+
 ##@ Tools
 
 ## Detect OS and Architecture
@@ -43,6 +53,10 @@ YAMLLINT ?= $(LOCALBIN)/yamllint
 K8S_CLI ?= kubectl
 YQ ?= $(LOCALBIN)/yq
 
+## Application Versions
+# RHOAI version to use for bundle updates - update this when new catalog folder appears in RHOAI-Build-Config
+RHOAI_VERSION ?= 3.5.0-ea.2
+
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.0
 KUBE_LINTER_VERSION ?= v0.7.6
@@ -53,6 +67,24 @@ KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/k
 
 KUADRANT_NS ?= kuadrant-system # (RHCL operator-related) should match the namespace in Kuadrant CR yaml (default is kuadrant-system)
 KUSTOMIZE_MODE ?= true # If false, patches the Authorino CR directly instead of updating the kustomization.yaml
+
+# Operator type for helm installation (odh or rhoai)
+OPERATOR_TYPE ?= odh
+# Branch to fetch images from Build-Config repo
+# example for RHOAI: rhoai-3.4 or rhoai-3.5-ea.1
+BUILD_CONFIG_BRANCH ?= main
+BUILD_CONFIG_BRANCH := $(strip $(BUILD_CONFIG_BRANCH))
+
+# Applications namespace based on operator type
+ifeq ($(OPERATOR_TYPE),rhoai)
+	APPLICATIONS_NAMESPACE := redhat-ods-applications
+	BUILD_CONFIG_REPO := red-hat-data-services/RHOAI-Build-Config
+else
+	APPLICATIONS_NAMESPACE := opendatahub
+	BUILD_CONFIG_REPO := opendatahub-io/ODH-Build-Config
+endif
+
+BUILD_CONFIG_URL := https://raw.githubusercontent.com/$(BUILD_CONFIG_REPO)/$(BUILD_CONFIG_BRANCH)/helm/xks-values-patch.yaml
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -197,7 +229,7 @@ endef
 CHARTS_DIR ?= charts
 # Default chart to operate on (umbrella chart)
 CHART_NAME ?=
-CHART_PATH ?= $(CHARTS_DIR)/$(if $(CHART_NAME),$(CHART_NAME),odh-rhoai)
+CHART_PATH ?= $(CHARTS_DIR)/$(if $(CHART_NAME),$(CHART_NAME),rhai-on-openshift-chart)
 
 # Snapshot configuration (in scripts directory)
 HELM_DOCS_VERSION ?= 37d3055fece566105cf8cff7c17b7b2355a01677 # v1.14.2
@@ -220,15 +252,6 @@ $(HELM_DOCS): $(LOCALBIN)
 helm-docs: helm-docs-ensure ## Run helm-docs for all charts.
 	$(HELM_DOCS) --chart-search-root $(shell pwd)/$(CHARTS_DIR) -o api-docs.md
 
-# Operator type for helm installation (odh or rhoai)
-OPERATOR_TYPE ?= odh
-
-# Applications namespace based on operator type
-ifeq ($(OPERATOR_TYPE),rhoai)
-	APPLICATIONS_NAMESPACE := redhat-ods-applications
-else
-	APPLICATIONS_NAMESPACE := opendatahub
-endif
 
 .PHONY: helm-verify
 helm-verify: ## Verify helm chart installation and DSC components
@@ -236,18 +259,21 @@ helm-verify: ## Verify helm chart installation and DSC components
 
 # Extra arguments to pass to helm commands (e.g., --set olm.source=custom-catalog)
 HELM_EXTRA_ARGS ?=
+HELM_INSTALL_VALUES_FILE ?= docs/examples/values-all-components-managed.yaml
+# Remove ogx to avoid nfd and nvidiaGPUOperator dependencies installation on tests.
+# TODO: Remove modelsAsService as it depends on PostgreSQL, need to support it in the chart
+HELM_INSTALL_ARGS := -f $(HELM_INSTALL_VALUES_FILE) --set components.ogx.dsc.managementState=Removed --set components.kserve.dsc.modelsAsService.managementState=Removed
 
 .PHONY: helm-install-verify
 helm-install-verify: ## Install helm chart and verify installation
 	@echo "=== Step 1: Install operators ==="
-	helm upgrade --install odh ./$(CHART_PATH) -n opendatahub-gitops --create-namespace $(HELM_EXTRA_ARGS)
-	@echo ""
+	helm upgrade --install odh ./$(CHART_PATH) -n opendatahub-gitops --create-namespace $(HELM_INSTALL_ARGS) $(HELM_EXTRA_ARGS)
 	@echo "=== Step 2: Wait for CRDs (dependency) ==="
 	@./scripts/wait-for-crds.sh
 	@bash ./scripts/verify-dependencies.sh
 	@echo ""
 	@echo "=== Step 3: Enable DSC and DSCInitialization ==="
-	helm upgrade --install odh ./$(CHART_PATH) -n opendatahub-gitops $(HELM_EXTRA_ARGS)
+	helm upgrade --install odh ./$(CHART_PATH) -n opendatahub-gitops $(HELM_INSTALL_ARGS) $(HELM_EXTRA_ARGS)
 	@echo ""
 	@echo "=== Step 4: Verify operator and DSC installation, reducing dashboard replicas to 1 to reduce resource usage ==="
 	@echo "Waiting for odh-dashboard deployment to exist in namespace $(APPLICATIONS_NAMESPACE)..."
@@ -263,8 +289,52 @@ helm-install-verify: ## Install helm chart and verify installation
 	@$(MAKE) prepare-authorino-tls KUSTOMIZE_MODE=false
 	@echo ""
 	@echo "=== Step 6: Final helm upgrade with wait condition ==="
-	helm upgrade --install odh ./$(CHART_PATH) -n opendatahub-gitops --wait --timeout 10m $(HELM_EXTRA_ARGS)
+	helm upgrade --install odh ./$(CHART_PATH) -n opendatahub-gitops --wait --timeout 10m $(HELM_INSTALL_ARGS) $(HELM_EXTRA_ARGS)
+
+## RHAI on XKS Chart
+XKS_CHART_PATH ?= $(CHARTS_DIR)/rhai-on-xks-chart
+XKS_RELEASE_NAME ?= rhai-on-xks
+XKS_NAMESPACE ?= rhai-on-xks
+XKS_CLOUD_PROVIDER ?= azure
+XKS_PULL_SECRET ?=
+
+.PHONY: helm-verify-xks
+helm-verify-xks: ## Verify rhai-on-xks-chart installation and lifecycle. Use XKS_TEST=<num> for specific test
+	RELEASE_NAME="$(XKS_RELEASE_NAME)" NAMESPACE="$(XKS_NAMESPACE)" CLOUD_PROVIDER="$(XKS_CLOUD_PROVIDER)" PULL_SECRET="$(XKS_PULL_SECRET)" HELM_EXTRA_ARGS="$(HELM_EXTRA_ARGS)" bash ./charts/rhai-on-xks-chart/scripts/verify.sh $(XKS_TEST)
+
+.PHONY: helm-install-verify-xks
+helm-install-verify-xks: ## Install and verify rhai-on-xks-chart
+	# TODO(RHOAIENG-63729): remove -f values-e2e.yaml once a runner with sufficient resources is available
+	VALUES_FILE=$(XKS_CHART_PATH)/test/values-e2e.yaml $(MAKE) helm-verify-xks
 
 .PHONY: helm-uninstall
 helm-uninstall: ## Uninstall helm chart and all dependencies
 	./scripts/uninstall-helm-chart.sh
+
+.PHONY: update-image
+update-image: yq ## Update xks chart images from Build-Config repo into values-$(BUILD_CONFIG_BRANCH).yaml
+	@if [ "$(OPERATOR_TYPE)" = "rhoai" ] && [ "$(BUILD_CONFIG_BRANCH)" = "main" ]; then \
+		echo "Error: RHOAI requires a release branch (e.g. rhoai-3.4), not 'main'. Set BUILD_CONFIG_BRANCH=<release-branch>." >&2; exit 1; \
+	fi; \
+	echo "Fetching $(BUILD_CONFIG_URL)..."; \
+	patch=$$(mktemp); \
+	trap "rm -f $${patch}" EXIT; \
+	if ! curl -sfL "$(BUILD_CONFIG_URL)" -o "$${patch}"; then \
+		echo "Error: Failed to fetch $(BUILD_CONFIG_URL). Does the branch '$(BUILD_CONFIG_BRANCH)' exist in $(BUILD_CONFIG_REPO)?" >&2; exit 1; \
+	fi; \
+	override="$(XKS_CHART_PATH)/values-$(BUILD_CONFIG_BRANCH).yaml"; \
+	cp "$(XKS_CHART_PATH)/values.yaml" "$${override}" && \
+	$(SED_COMMAND) -i '/^  # Example:$$/,/^  #.*value:.*$$/d' "$${override}" && \
+	$(YQ) -i '.rhaiOperator.image = load("'"$${patch}"'").rhaiOperator.image' "$${override}" && \
+	$(YQ) -i '.rhaiOperator.relatedImages = load("'"$${patch}"'").rhaiOperator.relatedImages' "$${override}" && \
+	$(YQ) -i '.hooks.cliImage = load("'"$${patch}"'").hooks.cliImage' "$${override}" && \
+	$(YQ) -i '.azure.cloudManager.image = load("'"$${patch}"'").azure.cloudManager.image' "$${override}" && \
+	$(YQ) -i '.coreweave.cloudManager.image = load("'"$${patch}"'").coreweave.cloudManager.image' "$${override}" && \
+	$(YQ) -i '.aws.cloudManager.image = load("'"$${patch}"'").aws.cloudManager.image' "$${override}" && \
+	echo "Created $${override}:" && \
+	echo "  rhaiOperator.image: $$($(YQ) '.rhaiOperator.image' "$${override}")" && \
+	echo "  relatedImages: $$($(YQ) '.rhaiOperator.relatedImages | length' "$${override}") entries" && \
+	echo "  hooks.cliImage: $$($(YQ) '.hooks.cliImage' "$${override}")" && \
+	echo "  azure.cloudManager.image: $$($(YQ) '.azure.cloudManager.image' "$${override}")" && \
+	echo "  coreweave.cloudManager.image: $$($(YQ) '.coreweave.cloudManager.image' "$${override}")" && \
+	echo "  aws.cloudManager.image: $$($(YQ) '.aws.cloudManager.image' "$${override}")"

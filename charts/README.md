@@ -1,18 +1,32 @@
-# xKS Operator Helm Charts
+# Helm Charts
 
-Helm charts for deploying dependent operators on vanilla Kubernetes (xKS) clusters without OLM.
-These charts are extracted from Red Hat operator bundles and deploy operators with hardcoded namespaces.
+Helm charts for deploying Red Hat AI (RHAI) operators and their dependencies on OpenShift and vanilla Kubernetes (xKS) clusters.
 
 ## Charts
 
+### Main Charts
+
+| Chart | Platform | Description | Docs |
+|-------|----------|-------------|------|
+| [`rhai-on-openshift-chart`](rhai-on-openshift-chart/) | OpenShift | ODH/RHOAI dependencies and component configurations via OLM | [README](rhai-on-openshift-chart/README.md) |
+| [`rhai-on-xks-chart`](rhai-on-xks-chart/) | Vanilla Kubernetes (xKS) | RHAI operator and cloud manager components (non-OLM) | [README](rhai-on-xks-chart/README.md) |
+
+### Dependency Charts
+
+Extracted from Red Hat operator bundles for deploying operators on vanilla Kubernetes without OLM. These are used by `rhai-on-xks-chart`.
+
 | Chart | Version | Namespace | Description |
 |-------|---------|-----------|-------------|
-| `cert-manager-operator` | v1.18.1 | `cert-manager-operator` / `cert-manager` | Red Hat cert-manager Operator |
-| `gateway-api` | v1.4.0 | cluster-scoped | [Kubernetes Gateway API](https://github.com/kubernetes-sigs/gateway-api) CRDs |
-| `lws-operator` | 1.0 | `openshift-lws-operator` | Leader-Worker-Set Operator |
-| `sail-operator` | 3.2.1 (Istio up to v1.27.3) | `istio-system` | Red Hat Sail (Istio) Operator |
+| [`cert-manager-operator`](dependencies/cert-manager-operator/) | v1.18.1 | `cert-manager-operator` / `cert-manager` | Red Hat cert-manager Operator |
+| [`gateway-api`](dependencies/gateway-api/) | v1.4.0 | cluster-scoped | [Kubernetes Gateway API](https://github.com/kubernetes-sigs/gateway-api) CRDs |
+| [`lws-operator`](dependencies/lws-operator/) | 1.0 | `openshift-lws-operator` | Leader-Worker-Set Operator |
+| [`sail-operator`](dependencies/sail-operator/) | 3.2.1 (Istio up to v1.27.3) | `istio-system` | Red Hat Sail (Istio) Operator |
 
-## Pre-Install Steps
+---
+
+The rest of this document covers the **dependency charts** (standalone installation and maintenance). For the main charts, see their individual READMEs linked above.
+
+## Pre-Install Steps (Dependency Charts)
 
 ### Infrastructure CRD and CR (required for cert-manager-operator)
 
@@ -58,18 +72,18 @@ subjects:
 EOF
 ```
 
-## Installation
+## Installation (Dependency Charts)
 
 ```bash
-helm install cert-manager-operator charts/cert-manager-operator/
-helm install gateway-api charts/gateway-api/
-helm install lws-operator charts/lws-operator/
-helm install sail-operator charts/sail-operator/
+helm install cert-manager-operator charts/dependencies/cert-manager-operator/
+helm install gateway-api charts/dependencies/gateway-api/
+helm install lws-operator charts/dependencies/lws-operator/
+helm install sail-operator charts/dependencies/sail-operator/
 ```
 
 Each operator chart creates its own namespace from `values.yaml` defaults. The `gateway-api` chart is cluster-scoped (CRDs only) and does not create a namespace.
 
-## Post-Install Steps
+## Post-Install Steps (Dependency Charts)
 
 ### 1. Pull Secrets (if using registry.redhat.io images)
 
@@ -160,7 +174,6 @@ apiVersion: sailoperator.io/v1
 kind: Istio
 metadata:
   name: default
-  namespace: istio-system
 spec:
   namespace: istio-system
   version: v1.27-latest
@@ -200,7 +213,61 @@ kubectl annotate validatingwebhookconfiguration istio-validator-istio-system sai
 
 ## Updating Charts
 
-### Operator charts (bundle-derived)
+### RHAI on XKS Helm Chart
+
+See the [`rhai-on-xks-chart` README](rhai-on-xks-chart/README.md) for installation and usage details.
+
+The chart generates its templates from the [opendatahub-operator](https://github.com/opendatahub-io/opendatahub-operator) repository using kustomize and [helmtemplate-generator](https://github.com/davidebianchi/helmtemplate-generator). It also generates cloud-specific (Azure, CoreWeave) cloudmanager templates.
+
+**Prerequisites:** `go`, `kustomize`, and access to the ODH `opendatahub-operator` git repo.
+
+**Update from the default branch (rhoai-3.4):**
+
+```bash
+./charts/rhai-on-xks-chart/scripts/update-bundle.sh 3.4.0-ea.2
+```
+
+**Update from a specific branch:**
+
+```bash
+./charts/rhai-on-xks-chart/scripts/update-bundle.sh 3.5.0 --branch rhoai-3.5
+```
+
+**Update from a local opendatahub-operator checkout** (skips cloning):
+
+```bash
+./charts/rhai-on-xks-chart/scripts/update-bundle.sh v2.19.0 --odh-operator-dir /path/to/opendatahub-operator
+```
+
+#### Updating Operator Images
+
+Use `make update-image` to generate a branch-specific values file with operator images from the Build-Config repo. This creates `values-<branch>.yaml`.
+
+**Important:** For RHOAI, you must use a release branch (e.g. `rhoai-3.4`) rather than `main`.
+
+```bash
+# ODH (default): fetches from ODH-Build-Config main branch
+# Currently not supported yet
+#make update-image
+
+# RHOAI release 3.4
+make update-image OPERATOR_TYPE=rhoai BUILD_CONFIG_BRANCH=rhoai-3.4
+
+# Use the generated file with helm install for RHOAI 3.4
+helm upgrade --install rhai-on-xks ./charts/rhai-on-xks-chart \
+  -f charts/rhai-on-xks-chart/values-rhoai-3.4.yaml \
+  -n rhai-on-xks --create-namespace --set azure.enabled=true
+```
+
+The script:
+
+1. Clones (or uses a local) opendatahub-operator repo and runs `make manifests-all`
+2. Builds kustomize manifests from `config/rhaii/rhoai/default/`
+3. Pipes them through `helmtemplate-generator` to produce Helm templates
+4. Repeats for each cloudmanager target (Azure, CoreWeave) from `config/cloudmanager/<cloud>/rhoai/`
+5. Updates `Chart.yaml` with the new `appVersion`
+
+### Dependency Operator Charts (bundle-derived)
 
 Each operator chart under `charts/dependencies/` includes an `update-bundle.sh` script that extracts fresh manifests from Red Hat operator bundles.
 
@@ -248,35 +315,3 @@ The script downloads CRDs from the [kubernetes-sigs/gateway-api](https://github.
 helm lint charts/dependencies/gateway-api/
 make chart-snapshots
 ```
-
-### RHAII Helm Chart
-
-The `rhaii-helm-chart` generates its templates from the [opendatahub-operator](https://github.com/opendatahub-io/opendatahub-operator) repository using kustomize and [helmtemplate-generator](https://github.com/davidebianchi/helmtemplate-generator). It also generates cloud-specific (Azure, CoreWeave) cloudmanager templates.
-
-**Prerequisites:** `go`, `kustomize`, and SSH access to the opendatahub-operator repo.
-
-**Update from the default branch (main):**
-
-```bash
-./charts/rhaii-helm-chart/scripts/update-bundle.sh v2.19.0
-```
-
-**Update from a specific branch:**
-
-```bash
-./charts/rhaii-helm-chart/scripts/update-bundle.sh v2.19.0 --branch feat/my-branch
-```
-
-**Update from a local opendatahub-operator checkout** (skips cloning):
-
-```bash
-./charts/rhaii-helm-chart/scripts/update-bundle.sh v2.19.0 --odh-operator-dir /path/to/opendatahub-operator
-```
-
-The script:
-
-1. Clones (or uses a local) opendatahub-operator repo and runs `make manifests-all`
-2. Builds kustomize manifests from `config/rhaii/rhoai/default/`
-3. Pipes them through `helmtemplate-generator` to produce Helm templates
-4. Repeats for each cloudmanager target (Azure, CoreWeave) from `config/cloudmanager/<cloud>/rhoai/`
-5. Updates `Chart.yaml` with the new `appVersion`

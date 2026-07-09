@@ -1,0 +1,100 @@
+name: RHAI on XKS Chart E2E Test
+
+on:
+  pull_request_target:
+    types: [opened, labeled, synchronize, reopened]
+    paths:
+      - 'charts/rhai-on-xks-chart/**'
+  push:
+    branches: [main]
+    paths:
+      - 'charts/rhai-on-xks-chart/**'
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cloud_provider: [azure, coreweave, aws]
+    steps:
+      - name: Check authorization
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
+          EVENT_ACTION: ${{ github.event.action }}
+          LABEL_NAME: ${{ github.event.label.name }}
+          HAS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'run-xks-e2e') }}
+        run: |
+          TRUSTED_BOTS=("github-actions[bot]" "red-hat-konflux[bot]" "jira-autofix[bot]")
+
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            echo "Push to main — running automatically"
+            exit 0
+          fi
+          if [[ "$AUTHOR_ASSOCIATION" =~ ^(OWNER|MEMBER|COLLABORATOR)$ ]]; then
+            echo "Trusted contributor — running automatically"
+            exit 0
+          fi
+          for bot in "${TRUSTED_BOTS[@]}"; do
+            if [[ "$AUTHOR_LOGIN" == "$bot" ]]; then
+              echo "Trusted bot — running automatically"
+              exit 0
+            fi
+          done
+          if [[ "$EVENT_ACTION" == "labeled" && ( "$LABEL_NAME" == "lgtm" || "$LABEL_NAME" == "approved" ) ]]; then
+            echo "Reviewer approval ($LABEL_NAME) — running automatically"
+            exit 0
+          fi
+          if [[ "$HAS_LABEL" == "true" ]]; then
+            echo "External contributor — approved via 'run-xks-e2e' label"
+            exit 0
+          fi
+          echo "::error::xKS e2e tests required. A maintainer must add the 'run-xks-e2e' label after reviewing the code."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+
+      - name: Create kind cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+
+      - name: Install and verify chart
+        timeout-minutes: 30
+        env:
+          RHAI_PULL_SECRET: ${{ secrets.RHAI_PULL_SECRET }}
+        run: |
+          set -euo pipefail
+          PULL_SECRET_FILE="$(mktemp)"
+          trap 'rm -f "${PULL_SECRET_FILE}"' EXIT
+          chmod 600 "${PULL_SECRET_FILE}"
+          printf '%s' "${RHAI_PULL_SECRET}" > "${PULL_SECRET_FILE}"
+          make helm-install-verify-xks \
+            XKS_CLOUD_PROVIDER=${{ matrix.cloud_provider }} \
+            XKS_PULL_SECRET="${PULL_SECRET_FILE}"
+
+      - name: Dump custom resources on failure
+        if: failure()
+        run: |
+          echo "=== KServe CR ==="
+          kubectl get kserves.components.platform.opendatahub.io -A -o yaml 2>/dev/null || echo "No KServe CRs found"
+          echo ""
+          if [ "${{ matrix.cloud_provider }}" = "azure" ]; then
+            echo "=== AzureKubernetesEngine CR ==="
+            kubectl get azurekubernetesengines.infrastructure.opendatahub.io -A -o yaml 2>/dev/null || echo "No AzureKubernetesEngine CRs found"
+          elif [ "${{ matrix.cloud_provider }}" = "coreweave" ]; then
+            echo "=== CoreWeaveKubernetesEngine CR ==="
+            kubectl get coreweavekubernetesengines.infrastructure.opendatahub.io -A -o yaml 2>/dev/null || echo "No CoreWeaveKubernetesEngine CRs found"
+          elif [ "${{ matrix.cloud_provider }}" = "aws" ]; then
+            echo "=== AWSKubernetesEngine CR ==="
+            kubectl get awskubernetesengines.infrastructure.opendatahub.io -A -o yaml 2>/dev/null || echo "No AWSKubernetesEngine CRs found"
+          fi
