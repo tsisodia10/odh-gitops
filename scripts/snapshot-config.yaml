@@ -75,6 +75,12 @@ charts:
     snapshots:
       - name: default
 
+  dependencies/postgresql:
+    snapshots:
+      - name: default
+        setFlags:
+          - password=snapshot-test-password
+
   dependencies/sail-operator:
     snapshots:
       - name: default
@@ -188,3 +194,14 @@ charts:
         setFlags:
           - aws.enabled=true
           - components.kserve.gateway.allowedRoutes.namespaces.from=Same
+
+      - name: azure-with-maas
+        setFlags:
+          - azure.enabled=true
+          - components.maas.enabled=true
+
+      - name: azure-with-maas-and-pull-secret
+        setFlags:
+          - azure.enabled=true
+          - components.maas.enabled=true
+          - imagePullSecret.dockerConfigJson=testauth

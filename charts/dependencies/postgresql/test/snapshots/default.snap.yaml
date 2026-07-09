@@ -1,0 +1,65 @@
+---
+# Source: postgresql/templates/deployment.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: maas-db-config
+  namespace: redhat-ods-applications
+stringData:
+  POSTGRES_PASSWORD: "snapshot-test-password"
+  DB_CONNECTION_URL: "postgres://maas:snapshot-test-password@maas-postgresql.redhat-ods-applications.svc:5432/maas?sslmode=disable"
+---
+# Source: postgresql/templates/deployment.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: maas-postgresql
+  namespace: redhat-ods-applications
+  labels:
+    app: maas-postgresql
+spec:
+  selector:
+    app: maas-postgresql
+  ports:
+  - port: 5432
+    targetPort: 5432
+---
+# Source: postgresql/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maas-postgresql
+  namespace: redhat-ods-applications
+  labels:
+    app: maas-postgresql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: maas-postgresql
+  template:
+    metadata:
+      labels:
+        app: maas-postgresql
+    spec:
+      containers:
+      - name: postgresql
+        image: postgres:16-alpine
+        env:
+        - name: POSTGRES_DB
+          value: maas
+        - name: POSTGRES_USER
+          value: maas
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: maas-db-config
+              key: POSTGRES_PASSWORD
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: pgdata
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: pgdata
+        emptyDir: {}

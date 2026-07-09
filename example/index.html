@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Weekly Dispatch — Newsletter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav-container">
+      <a href="#" class="logo">The Weekly Dispatch</a>
+      <ul class="nav-links">
+        <li><a href="#issues">Past Issues</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#subscribe" class="btn btn-nav">Subscribe</a></li>
+      </ul>
+      <button class="mobile-menu-btn" aria-label="Toggle menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-content">
+        <p class="hero-tag">Free weekly newsletter</p>
+        <h1>Stay ahead with curated insights on <span class="gradient-text">tech, AI & open source</span></h1>
+        <p class="hero-description">
+          Join 5,000+ developers and engineers who get a concise weekly roundup
+          of the most important stories in cloud-native, AI/ML, and open source — delivered every Monday.
+        </p>
+        <form class="subscribe-form" id="hero-form">
+          <div class="input-group">
+            <input type="email" placeholder="you@example.com" required aria-label="Email address">
+            <button type="submit" class="btn btn-primary">Subscribe</button>
+          </div>
+          <p class="form-note">No spam. Unsubscribe anytime.</p>
+        </form>
+      </div>
+      <div class="hero-visual">
+        <div class="card-stack">
+          <div class="preview-card card-1">
+            <span class="card-date">Jun 9, 2026</span>
+            <h3>Kubernetes 1.34 Highlights</h3>
+            <p>In-place pod resizing goes GA, sidecar containers get lifecycle hooks...</p>
+          </div>
+          <div class="preview-card card-2">
+            <span class="card-date">Jun 2, 2026</span>
+            <h3>Open Source LLM Roundup</h3>
+            <p>New open-weight models push the frontier of local inference...</p>
+          </div>
+          <div class="preview-card card-3">
+            <span class="card-date">May 26, 2026</span>
+            <h3>GitOps Best Practices</h3>
+            <p>Fleet management patterns for multi-cluster deployments...</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="about">
+      <h2>Why readers love it</h2>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">&#9889;</div>
+          <h3>5-minute read</h3>
+          <p>Concise summaries so you stay informed without the noise.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#127891;</div>
+          <h3>Expert curation</h3>
+          <p>Hand-picked by engineers working in cloud-native and AI daily.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128640;</div>
+          <h3>Actionable links</h3>
+          <p>Direct links to docs, repos, and deep-dives for each story.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="past-issues" id="issues">
+      <h2>Recent issues</h2>
+      <div class="issues-list">
+        <a href="#" class="issue-item">
+          <span class="issue-number">#42</span>
+          <span class="issue-title">Platform Engineering Trends — What Changed in 2026</span>
+          <span class="issue-date">Jun 9, 2026</span>
+        </a>
+        <a href="#" class="issue-item">
+          <span class="issue-number">#41</span>
+          <span class="issue-title">The Rise of Inference-Optimized Hardware</span>
+          <span class="issue-date">Jun 2, 2026</span>
+        </a>
+        <a href="#" class="issue-item">
+          <span class="issue-number">#40</span>
+          <span class="issue-title">WebAssembly Beyond the Browser: Server-Side WASM in Production</span>
+          <span class="issue-date">May 26, 2026</span>
+        </a>
+        <a href="#" class="issue-item">
+          <span class="issue-number">#39</span>
+          <span class="issue-title">Open Source Observability Stack Comparison 2026</span>
+          <span class="issue-date">May 19, 2026</span>
+        </a>
+        <a href="#" class="issue-item">
+          <span class="issue-number">#38</span>
+          <span class="issue-title">Securing Supply Chains with Sigstore & SLSA</span>
+          <span class="issue-date">May 12, 2026</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="cta" id="subscribe">
+      <div class="cta-content">
+        <h2>Ready to level up your week?</h2>
+        <p>Get the best of tech delivered to your inbox every Monday morning.</p>
+        <form class="subscribe-form" id="cta-form">
+          <div class="input-group">
+            <input type="email" placeholder="you@example.com" required aria-label="Email address">
+            <button type="submit" class="btn btn-primary">Subscribe</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-content">
+      <p class="footer-logo">The Weekly Dispatch</p>
+      <p class="footer-copy">&copy; 2026 The Weekly Dispatch. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
